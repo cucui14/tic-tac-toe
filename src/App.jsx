@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 
 const WINNING_LINES = [
@@ -57,10 +57,50 @@ function App() {
   const [scores, setScores] = useState({ X: 0, O: 0, draws: 0 })
   const [gameStarted, setGameStarted] = useState(false)
   const [hasRecordedResult, setHasRecordedResult] = useState(false)
+  const audioCtxRef = useRef(null)
 
   const winnerInfo = useMemo(() => calculateWinner(squares), [squares])
   const isDraw = squares.every(Boolean) && !winnerInfo
   const isRoundOver = Boolean(winnerInfo) || isDraw
+
+  const ensureAudioContext = useCallback(() => {
+    if (typeof window === 'undefined') return null
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext
+    if (!AudioContextClass) return null
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new AudioContextClass()
+    }
+    if (audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume().catch(() => {})
+    }
+    return audioCtxRef.current
+  }, [])
+
+  const playTone = useCallback(
+    (frequency, duration = 0.12) => {
+      const ctx = ensureAudioContext()
+      if (!ctx) return
+      const oscillator = ctx.createOscillator()
+      const gainNode = ctx.createGain()
+
+      oscillator.type = 'triangle'
+      oscillator.frequency.setValueAtTime(frequency, ctx.currentTime)
+      gainNode.gain.setValueAtTime(0.001, ctx.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + 0.01)
+      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+
+      oscillator.connect(gainNode)
+      gainNode.connect(ctx.destination)
+
+      oscillator.start()
+      oscillator.stop(ctx.currentTime + duration + 0.05)
+    },
+    [ensureAudioContext],
+  )
+
+  const playMoveSound = useCallback(() => playTone(540, 0.1), [playTone])
+  const playWinSound = useCallback(() => playTone(720, 0.3), [playTone])
+  const playDrawSound = useCallback(() => playTone(360, 0.25), [playTone])
 
   useEffect(() => {
     if (!gameStarted) return
@@ -71,15 +111,17 @@ function App() {
         ...prev,
         [winnerInfo.player]: prev[winnerInfo.player] + 1,
       }))
+      playWinSound()
       setHasRecordedResult(true)
     } else if (isDraw) {
       setScores((prev) => ({
         ...prev,
         draws: prev.draws + 1,
       }))
+      playDrawSound()
       setHasRecordedResult(true)
     }
-  }, [winnerInfo, isDraw, hasRecordedResult, gameStarted])
+  }, [winnerInfo, isDraw, hasRecordedResult, gameStarted, playWinSound, playDrawSound])
 
   const status = !gameStarted
     ? 'Ready to play? Hit Start Game!'
@@ -91,6 +133,8 @@ function App() {
 
   const handleSquareClick = (index) => {
     if (!gameStarted || squares[index] || winnerInfo || isDraw) return
+    ensureAudioContext()
+    playMoveSound()
 
     setSquares((prevSquares) => {
       const nextSquares = [...prevSquares]
@@ -107,12 +151,14 @@ function App() {
   }
 
   const handleStartGame = () => {
+    ensureAudioContext()
     setGameStarted(true)
     resetBoard()
   }
 
   const handleNewRound = () => {
     if (!gameStarted) return
+    ensureAudioContext()
     resetBoard()
   }
 
