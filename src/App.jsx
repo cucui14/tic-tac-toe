@@ -70,9 +70,6 @@ function App() {
     if (!audioCtxRef.current) {
       audioCtxRef.current = new AudioContextClass()
     }
-    if (audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume().catch(() => {})
-    }
     return audioCtxRef.current
   }, [])
 
@@ -80,20 +77,32 @@ function App() {
     (frequency, duration = 0.12) => {
       const ctx = ensureAudioContext()
       if (!ctx) return
-      const oscillator = ctx.createOscillator()
-      const gainNode = ctx.createGain()
 
-      oscillator.type = 'triangle'
-      oscillator.frequency.setValueAtTime(frequency, ctx.currentTime)
-      gainNode.gain.setValueAtTime(0.001, ctx.currentTime)
-      gainNode.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + 0.01)
-      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+      const startTone = () => {
+        const startTime = ctx.currentTime
+        const stopTime = startTime + duration
 
-      oscillator.connect(gainNode)
-      gainNode.connect(ctx.destination)
+        const oscillator = ctx.createOscillator()
+        const gainNode = ctx.createGain()
 
-      oscillator.start()
-      oscillator.stop(ctx.currentTime + duration + 0.05)
+        oscillator.type = 'triangle'
+        oscillator.frequency.setValueAtTime(frequency, startTime)
+        gainNode.gain.setValueAtTime(0.001, startTime)
+        gainNode.gain.exponentialRampToValueAtTime(0.24, startTime + 0.02)
+        gainNode.gain.exponentialRampToValueAtTime(0.001, stopTime)
+
+        oscillator.connect(gainNode)
+        gainNode.connect(ctx.destination)
+
+        oscillator.start(startTime)
+        oscillator.stop(stopTime + 0.02)
+      }
+
+      if (ctx.state === 'suspended') {
+        ctx.resume().then(startTone).catch(() => {})
+      } else {
+        startTone()
+      }
     },
     [ensureAudioContext],
   )
